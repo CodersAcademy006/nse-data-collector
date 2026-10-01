@@ -1,0 +1,33 @@
+name: daily
+on:
+  schedule:
+    - cron: "0 11 * * 1-5"  # 16:30 IST, after NSE close
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "instruments to fetch (0 = all)"
+        default: "0"
+permissions:
+  contents: write
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -u nse_collector.py daily
+        env:
+          KOTAK_CONSUMER_KEY: ${{ secrets.KOTAK_CONSUMER_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          LIMIT: ${{ inputs.limit || '0' }}
+      # GitHub disables cron on repos with no commits for 60 days; one empty commit a month keeps it alive
+      - if: github.event_name == 'schedule'
+        run: |
+          [ "$(date +%d)" -le 07 ] && [ "$(date +%u)" = 1 ] || exit 0
+          git config user.name "nse-bot" && git config user.email "nse-bot@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive $(date +%F)" && git push

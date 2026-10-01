@@ -1,0 +1,5 @@
+kotakneoapi==3.0.7
+pandas
+pyarrow
+huggingface_hub
+certifi
