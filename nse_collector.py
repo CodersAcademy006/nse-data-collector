@@ -100,6 +100,8 @@ def update(sym, token, interval):
             break
         if not got and old is None and rows:
             break  # walked back past the listing date
+        if got:
+            log(f"   {sym} {interval} {s} -> {end}: {len(got)} bars")
         rows += got
         end = s - dt.timedelta(days=1)
     if not rows:
