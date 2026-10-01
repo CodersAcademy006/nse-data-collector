@@ -83,8 +83,7 @@ def fetch(token, interval, fd, td):
         if isinstance(r, dict) and r.get("fault", {}).get("code") == 422:
             return None  # past the 5yr wall
         gap = min(gap * 1.5, 60)
-    log(f"  gave up {token} {interval} {fd}->{td}")
-    return []
+    raise RuntimeError(f"gave up {token} {interval} {fd}->{td}")  # never mistake throttling for "not listed yet"
 
 
 def update(sym, token, interval):
@@ -136,18 +135,26 @@ def kaggle_snapshot():
 def backfill():
     uni, last = universe(), time.time()
     log(f"backfill start: {len(uni)} instruments")
-    for i, (sym, token) in enumerate(uni.items(), 1):
-        for interval in ("D", "1min"):
-            try:
-                log(f"{i}/{len(uni)} {sym} {interval}: +{update(sym, token, interval)} rows (gap {gap:.1f}s)")
-            except Exception as e:
-                log(f"{i}/{len(uni)} {sym} {interval}: FAILED {type(e).__name__} {e}")
-        if time.time() - last > 3600:
-            try:
-                hf_push(OUT)
-            except Exception as e:
-                log(f"hf push failed, retry next hour: {e}")
-            last = time.time()
+    todo = list(uni.items())
+    for attempt in (1, 2):  # second round retries whatever failed (throttling, network)
+        failed = []
+        for i, (sym, token) in enumerate(todo, 1):
+            for interval in ("D", "1min"):
+                try:
+                    log(f"{i}/{len(todo)} {sym} {interval}: +{update(sym, token, interval)} rows (gap {gap:.1f}s)")
+                except Exception as e:
+                    log(f"{i}/{len(todo)} {sym} {interval}: FAILED {type(e).__name__} {e}")
+                    failed.append((sym, token))
+            if time.time() - last > 3600:
+                try:
+                    hf_push(OUT)
+                except Exception as e:
+                    log(f"hf push failed, retry next hour: {e}")
+                last = time.time()
+        todo = list(dict(failed).items())
+        if not todo:
+            break
+        log(f"retrying {len(todo)} failed instruments")
     hf_push(OUT)
     kaggle_snapshot()
     log("BACKFILL DONE")
@@ -160,7 +167,11 @@ def daily():
     for interval in ("D", "1min"):
         frames = []
         for i, (sym, token) in enumerate(list(uni.items())[:limit], 1):
-            got = fetch(token, interval, fd, today.isoformat()) or []
+            try:
+                got = fetch(token, interval, fd, today.isoformat()) or []
+            except RuntimeError as e:
+                log(f"skip {sym}: {e}")  # next day's overlapping 5-day window refills it
+                got = []
             if got:
                 f = pd.DataFrame(got, columns=COLS)
                 f.insert(0, "symbol", sym)
