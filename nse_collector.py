@@ -5,7 +5,7 @@ nse_collector.py -- NSE data collector (Kotak historical API, consumer key only)
                          pushed to the private HF dataset hourly (only changed files upload),
                          one Kaggle snapshot at the end, then exit. Re-run resumes.
   daily (GitHub Actions): last 5 days of 1min + D for every instrument ->
-                         daily/{1min,D}/YYYY-MM-DD.parquet (all symbols, `symbol` column) -> HF.
+                         daily/{1min,D}/YYYY/MM/YYYY-MM-DD.parquet (all symbols, `symbol` column) -> HF.
                          Overlapping windows self-heal missed days; dedupe on (symbol, timestamp).
 3/5/10/15/30/60min and W/M are not fetched: resample 1min/D locally.
 Order: indices, 5-stock basket, Nifty 500, then every other EQ/BE/SM/ST stock.
@@ -167,7 +167,7 @@ def daily():
                 log(f"{interval} {i}/{limit} (gap {gap:.1f}s)")
         df = pd.concat(frames)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        path = OUT / "daily" / interval / f"{today}.parquet"
+        path = OUT / "daily" / interval / f"{today:%Y}" / f"{today:%m}" / f"{today}.parquet"
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False, compression="zstd")
         log(f"daily {interval}: {len(df)} rows, {df['symbol'].nunique()} symbols")
