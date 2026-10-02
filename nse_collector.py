@@ -91,14 +91,16 @@ def update(sym, token, interval):
     old = pd.read_parquet(path) if path.exists() else None
     today = dt.date.today()
     start = old["timestamp"].max().date() if old is not None else today - dt.timedelta(days=int(365.25 * 5) - 2)
+    daily = OUT / "D" / f"{sym}.parquet"
+    if old is None and interval == "1min" and daily.exists():
+        # listing date comes from D; Kotak 1min history has empty months, so an empty chunk proves nothing
+        start = max(start, pd.read_parquet(daily, columns=["timestamp"])["timestamp"].min().date())
     rows, end = [], today
     while end >= start:
         s = max(start, end - dt.timedelta(days=CHUNK[interval]))
         got = fetch(token, interval, s.isoformat(), end.isoformat())
         if got is None:
             break
-        if not got and old is None and rows:
-            break  # walked back past the listing date
         if got:
             log(f"   {sym} {interval} {s} -> {end}: {len(got)} bars")
         rows += got
